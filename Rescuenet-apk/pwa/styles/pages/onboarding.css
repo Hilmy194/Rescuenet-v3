@@ -1,4 +1,4 @@
-.onboarding-screen { min-height: calc(100dvh - 100px); padding-top: 24px; }
+.onboarding-screen { padding-top: clamp(30px, 7dvh, 62px); }
 .onboarding-mark { display: grid; width: 84px; height: 84px; place-items: center; margin: 10px auto 22px; border-radius: 28px; background: linear-gradient(145deg, #dceeff, white); box-shadow: 0 14px 28px rgb(25 105 200 / 12%); }
 .onboarding-mark img { width: 68px; height: 68px; object-fit: contain; }
 .onboarding-screen > .eyebrow, .onboarding-screen > h1, .onboarding-screen > .lead { text-align: center; }

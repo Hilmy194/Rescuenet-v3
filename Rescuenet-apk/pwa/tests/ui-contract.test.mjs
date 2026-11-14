@@ -11,6 +11,8 @@ const files = await Promise.all(['pages/onboarding.mjs','pages/home.mjs','pages/
 test('PWA screens and four primary navigation tabs are present with unique IDs', () => {
   const ids = [...html.matchAll(/\bid="([^"]+)"/g)].map(match => match[1]);
   assert.equal(new Set(ids).size, ids.length, 'HTML IDs must be unique');
+  const mappedIds = [...app.match(/const byId = Object\.fromEntries\(\[([\s\S]*?)\]\.map/)?.[1].matchAll(/'([^']+)'/g) ?? []].map(match => match[1]);
+  for (const id of mappedIds) assert.ok(ids.includes(id), `mapped UI element #${id} must exist`);
   assert.ok(ids.includes('welcome-user'), 'home welcome text must exist in the app shell');
   for (const id of ['splash-screen','onboarding-screen','home-screen','map-screen','status-screen','profile-screen','sos-button','identity-card','bottom-nav']) {
     assert.ok(ids.includes(id), `missing UI contract element #${id}`);
@@ -48,7 +50,7 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
 });
 
 test('service worker caches the scheduler dependency and does not cache API responses', () => {
-  assert.match(worker, /CACHE_NAME = 'rescuenet-pwa-v14'/, 'location update changes must invalidate the previous shell cache');
+  assert.match(worker, /CACHE_NAME = 'rescuenet-pwa-v17'/, 'UI changes must invalidate the previous shell cache');
   assert.match(worker, /location-scheduler\.mjs/);
   for (const asset of ['pages/onboarding.mjs','pages/home.mjs','pages/map.mjs','pages/status.mjs','pages/profile.mjs','components/app-header.mjs','styles/pages/profile.css']) assert.ok(worker.includes(asset), `offline cache missing ${asset}`);
   assert.ok(worker.includes('if (/\\/api(?:\\/|$)/.test(url.pathname))'));

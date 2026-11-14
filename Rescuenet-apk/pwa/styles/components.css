@@ -1,9 +1,9 @@
-.brand-row { display: flex; align-items: center; gap: 11px; min-height: 54px; }
-.brand-logo { width: 46px; height: 46px; object-fit: contain; border-radius: 14px; }
+.brand-row { display: flex; align-items: center; gap: 9px; min-height: 48px; }
+.brand-logo { flex: 0 0 42px; width: 42px; height: 42px; object-fit: contain; border-radius: 13px; }
 .brand-copy { display: grid; gap: 3px; }
-.brand-copy strong { color: var(--navy); font-size: 18px; letter-spacing: -.35px; }
-.brand-copy span { color: #71819a; font-size: 10px; font-weight: 850; letter-spacing: 1.35px; }
-.status-pill { display: inline-flex; align-items: center; gap: 7px; margin-left: auto; padding: 9px 12px; border-radius: 999px; font-size: 11px; font-weight: 780; white-space: nowrap; }
+.brand-copy strong { color: var(--navy); font-size: 16px; letter-spacing: -.35px; }
+.brand-copy span { color: #71819a; font-size: 9px; font-weight: 850; letter-spacing: .9px; }
+.status-pill { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; padding: 8px 10px; border-radius: 999px; font-size: 10px; font-weight: 780; white-space: nowrap; }
 .status-pill::before { width: 8px; height: 8px; border-radius: 50%; background: currentColor; content: ""; }
 .status-offline { color: var(--amber); background: #fff1dc; }
 .status-online { color: #087748; background: #e4f7ed; }
@@ -24,12 +24,13 @@
 .connection-details strong { color: var(--navy); font-weight: 750; }
 .bottom-nav {
   position: fixed; z-index: 4; right: 0; bottom: 0; left: 0; display: grid;
-  grid-template-columns: repeat(4, 1fr); padding: 8px max(12px, calc((100vw - 560px) / 2)) calc(8px + env(safe-area-inset-bottom));
+  grid-template-columns: repeat(4, 1fr); gap: 4px; padding: 8px 14px calc(8px + env(safe-area-inset-bottom));
   border-top: 1px solid #dce6f2; background: rgb(255 255 255 / 94%);
   backdrop-filter: blur(18px); -webkit-backdrop-filter: blur(18px);
 }
-.bottom-nav button { display: grid; min-height: 58px; place-content: center; justify-items: center; gap: 3px; border: 0; border-radius: 16px; color: #71819a; background: transparent; font-size: 11px; font-weight: 700; }
-.bottom-nav button span:first-child { font-size: 21px; line-height: 1; }
+.bottom-nav button { display: grid; min-height: 58px; place-content: center; justify-items: center; gap: 4px; border: 0; border-radius: 15px; color: #71819a; background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; }
+.bottom-nav .nav-icon { display: grid; width: 25px; height: 25px; place-items: center; }
+.bottom-nav .nav-icon svg { width: 23px; height: 23px; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .bottom-nav button[aria-current=page] { color: #1261c5; background: #eaf3ff; }
 .toast { position: fixed; z-index: 8; right: 14px; bottom: calc(88px + env(safe-area-inset-bottom)); left: 14px; width: min(480px, calc(100% - 28px)); margin: auto; padding: 13px 15px; border-radius: 14px; color: white; background: #17345a; box-shadow: 0 9px 25px rgb(16 40 76 / 24%); font-size: 13px; line-height: 1.45; opacity: 0; pointer-events: none; transform: translateY(9px); transition: opacity .18s, transform .18s; }
 .toast.visible { opacity: 1; transform: translateY(0); }
@@ -39,3 +40,19 @@
 .report-card h2, .status-card h2, .settings-card h2 { margin: 0 0 10px; color: var(--navy); font-size: 18px; }
 .consent-row { display: flex; align-items: flex-start; gap: 10px; margin-top: 13px; color: #42536b; font-size: 13px; line-height: 1.5; }
 .consent-row input { flex: 0 0 20px; width: 20px; height: 20px; margin: 0; accent-color: var(--blue); }
+@media (min-width: 720px) {
+  .bottom-nav {
+    right: auto; left: 50%; bottom: max(27px, calc((100dvh - 852px) / 2 + 7px));
+    width: 416px; transform: translateX(-50%);
+    border-radius: 0 0 32px 32px;
+  }
+  .toast { right: auto; left: 50%; bottom: max(112px, calc((100dvh - 852px) / 2 + 92px)); width: 386px; transform: translate(-50%, 9px); }
+  .toast.visible { transform: translate(-50%, 0); }
+}
+@media (max-width: 370px) {
+  .brand-logo { flex-basis: 38px; width: 38px; height: 38px; }
+  .brand-copy span { font-size: 8px; letter-spacing: .6px; }
+  .brand-row > .status-pill { padding: 7px 8px; font-size: 9px; }
+  .connection-details { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); }
+  .connection-details strong { overflow-wrap: anywhere; }
+}
