@@ -1,6 +1,22 @@
-.status-card { padding: 20px; }
-.status-card > p:first-of-type { color: var(--navy); font-weight: 780; }
+.status-card { padding: 19px; }
+.status-card > .report-status, .status-card > #location-delivery-status { color: var(--navy); font-size: 18px; font-weight: 780; }
 .status-card .secondary-text { color: var(--muted); font-weight: 400; line-height: 1.5; }
 .status-card .connection-details { margin-top: 14px; }
 .status-card .button { width: 100%; margin-top: 10px; }
 .status-card > .text-button { margin-right: 14px; }
+.sos-status-card h2 { margin: 7px 0 0; font-size: 24px; }
+.sos-status-card .report-status { margin: 9px 0 4px; }
+.sos-status-card #report-detail { margin: 0; font-size: 13px; }
+.sos-stages { display: grid; gap: 0; margin: 19px 0 12px; padding: 15px 0 3px; border-top: 1px solid #edf1f7; list-style: none; }
+.sos-stage { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 11px; min-height: 55px; }
+.sos-stage:not(:last-child)::after { position: absolute; top: 31px; bottom: 4px; left: 14px; width: 2px; background: #dce6f2; content: ''; }
+.stage-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: #667891; background: #edf2f8; font-size: 12px; font-weight: 800; }
+.sos-stage.is-complete .stage-mark { color: #087748; background: #e4f7ed; }
+.sos-stage.is-current .stage-mark { color: #155bb2; background: #e4efff; }
+.sos-stage.is-attention .stage-mark { color: #8a5400; background: #fff1dc; }
+.sos-stage strong, .sos-stage div > span { display: block; }
+.sos-stage strong { margin: 1px 0 3px; font-size: 13px; }
+.sos-stage div > span { color: var(--muted); font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.sos-history-panel { margin-top: 9px; padding-top: 13px; border-top: 1px solid #edf1f7; }
+.sos-history-panel summary { color: #1261c5; font-size: 13px; font-weight: 750; cursor: pointer; }
+.sos-history { border: 0; margin-top: 8px; padding-top: 0; }

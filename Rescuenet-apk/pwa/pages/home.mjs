@@ -1,5 +1,5 @@
 export function renderHome({ elements, profile, state }) {
-  for (const id of ['welcome-user', 'sos-button', 'sos-button-label']) {
+  for (const id of ['welcome-user', 'sos-help', 'sos-button', 'sos-button-label']) {
     if (!elements[id]) throw new Error(`Elemen wajib Beranda tidak ditemukan: #${id}`);
   }
   if (!state || !Object.hasOwn(state, 'sendingSosId') || !Object.hasOwn(state, 'nodeReady')) {
@@ -7,8 +7,11 @@ export function renderHome({ elements, profile, state }) {
   }
   const user = profile();
   elements['welcome-user'].textContent = user
-    ? `Halo, ${user.name}. Tetap terhubung di lapangan, bahkan tanpa internet.`
-    : 'Bantuan saat dibutuhkan. Siapkan identitas dan koneksi RescueNet.';
+    ? `Halo, ${user.name}. Anda dapat membuat SOS meski Field Node belum terhubung.`
+    : 'Siapkan identitas agar Anda dapat membuat SOS.';
+  elements['sos-help'].textContent = !user ? 'Lengkapi profil untuk membuat SOS.'
+    : state.nodeReady ? 'Kirim SOS ke Field Node. GPS tidak wajib.'
+      : 'Simpan SOS di perangkat. Kirim setelah Field Node siap.';
   elements['sos-button'].disabled = state.sendingSosId !== null || !user;
   elements['sos-button-label'].textContent = state.sendingSosId ? 'MENGIRIM…' : state.nodeReady ? 'KIRIM SOS' : 'SIMPAN SOS';
 }

@@ -3,6 +3,11 @@ const SOS_LABELS = {
   FIELD_ACCEPTED: 'Diterima Field Node', UNKNOWN: 'Status belum pasti', FAILED: 'Gagal dikirim',
 };
 
+function setSosStage(elements, stage, detail, state = '') {
+  elements[`sos-stage-${stage}-detail`].textContent = detail;
+  elements[`sos-stage-${stage}`].className = `sos-stage${state ? ` ${state}` : ''}`;
+}
+
 export function renderSosStatus({ state, elements, retrySos }) {
   const current = state.events.at(-1) || null;
   if (!current) {
@@ -11,7 +16,11 @@ export function renderSosStatus({ state, elements, retrySos }) {
     elements['home-report-status'].textContent = 'Belum ada SOS aktif';
     elements['home-report-detail'].textContent = 'Anda belum membuat laporan SOS.';
     elements['retry-button'].classList.add('hidden');
+    elements['sos-history-panel'].hidden = true;
     elements['sos-history'].replaceChildren();
+    setSosStage(elements, 'local', 'Belum dibuat');
+    setSosStage(elements, 'node', 'Belum dikirim');
+    setSosStage(elements, 'server', 'Belum dapat dipantau dari PWA');
     return;
   }
   const label = SOS_LABELS[current.status] || 'Status belum diketahui';
@@ -23,6 +32,17 @@ export function renderSosStatus({ state, elements, retrySos }) {
   elements['home-report-status'].textContent = label;
   elements['home-report-detail'].textContent = detail;
   elements['retry-button'].classList.toggle('hidden', !['QUEUED_LOCAL', 'FAILED', 'UNKNOWN'].includes(current.status));
+  elements['sos-history-panel'].hidden = false;
+  setSosStage(elements, 'local', `Dibuat ${new Date(current.createdAt).toLocaleTimeString('id-ID')}`, 'is-complete');
+  const nodeStage = {
+    QUEUED_LOCAL: ['Menunggu pengiriman', ''],
+    SENDING: ['Sedang dikirim', 'is-current'],
+    FIELD_ACCEPTED: [`Diterima ${new Date(current.deliveredAt).toLocaleTimeString('id-ID')}`, 'is-complete'],
+    UNKNOWN: ['Belum pasti; coba lagi dengan ID yang sama', 'is-attention'],
+    FAILED: ['Ditolak; coba kirim ulang', 'is-attention'],
+  }[current.status] || ['Belum diketahui', 'is-attention'];
+  setSosStage(elements, 'node', ...nodeStage);
+  setSosStage(elements, 'server', 'Belum dapat dipantau dari PWA');
   elements['sos-history'].replaceChildren();
   for (const event of [...state.events].reverse()) {
     const row = document.createElement('div');

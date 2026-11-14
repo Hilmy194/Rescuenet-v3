@@ -7,10 +7,13 @@ export function renderConnectionCard({ state, elements, statusLabel, meshText })
     ? (ready ? 'API Field Node dapat diakses. Mesh, Gateway, dan petugas memiliki status terpisah.'
       : 'API dapat diakses, tetapi Field Node belum siap menerima kiriman. Coba lagi sebentar.')
     : state.connectionError || 'Sambungkan ke Wi-Fi RescueNet, pilih tetap terhubung tanpa internet, lalu periksa koneksi.';
+  const homeHelp = reached
+    ? (ready ? 'Field Node siap menerima kiriman.' : 'API terhubung, tetapi pengiriman belum siap.')
+    : state.connectionError || 'Sambungkan ke Wi-Fi RescueNet, lalu cek koneksi.';
 
   for (const [id, value] of [
     ['connection-title', title], ['home-connection-title', title],
-    ['connection-help', help], ['home-connection-help', help],
+    ['connection-help', help], ['home-connection-help', homeHelp],
     ['api-state', reached ? 'Terhubung' : statusLabel()], ['home-api-state', reached ? 'Terhubung' : statusLabel()],
     ['mesh-state', meshText(state.nodeDetails)], ['home-mesh-state', meshText(state.nodeDetails)],
     ['status-api', reached ? 'Terhubung' : statusLabel()], ['status-mesh', meshText(state.nodeDetails)],

@@ -1,15 +1,21 @@
-#home-screen .page-heading { padding-top: 18px; }
-#home-screen .page-heading h1 { font-size: clamp(34px, 9vw, 43px); }
-#home-screen .lead { font-size: 15px; }
-#home-screen .connection-card { padding: 20px; border-color: #d7e7fb; }
+#home-screen .page-heading { padding-top: 12px; padding-bottom: 8px; }
+#home-screen .page-heading h1 { font-size: clamp(31px, 8vw, 39px); }
+#home-screen .lead { font-size: 14px; }
+#home-screen .connection-card { padding: 18px; border-color: #d7e7fb; }
 #home-screen .connection-card .button { width: 100%; }
-.sos-card { margin: 14px 0; padding: 21px 19px; border: 1px solid #ffbfc7; border-radius: 25px; background: linear-gradient(150deg, #fff, #fff3f4); box-shadow: 0 9px 25px rgb(196 45 62 / 7%); }
+.sos-card { margin: 10px 0 15px; padding: 19px; border: 1px solid #ffc7ce; border-radius: 24px; background: linear-gradient(150deg, #fff, #fff3f4); box-shadow: 0 9px 25px rgb(196 45 62 / 7%); }
 .sos-card .eyebrow { color: var(--red); }
-.sos-card h2 { margin: 8px 0 5px; color: var(--navy); font-size: 27px; letter-spacing: -.7px; }
-.sos-card > p:not(.eyebrow):not(.fine-print) { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
-.button-sos { display: flex; width: 100%; min-height: 82px; gap: 13px; margin: 14px auto 0; padding: 12px; border-radius: 19px; color: white; background: linear-gradient(135deg, #f44352, #df1f38); box-shadow: 0 12px 25px rgb(219 37 61 / 20%); font-size: 21px; letter-spacing: .2px; }
+.sos-card h2 { margin: 7px 0 4px; color: var(--navy); font-size: 25px; letter-spacing: -.7px; }
+.sos-card > p:not(.eyebrow):not(.fine-print) { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.sos-card .fine-print { color: #72575f; font-size: 12px; }
+.button-sos { display: flex; width: 100%; min-height: 70px; gap: 13px; margin: 13px auto 0; padding: 12px; border-radius: 18px; color: white; background: linear-gradient(135deg, #f44352, #df1f38); box-shadow: 0 12px 25px rgb(219 37 61 / 20%); font-size: 19px; letter-spacing: .2px; }
 .button-sos span:first-child { display: grid; width: 42px; height: 42px; place-items: center; border: 2px solid rgb(255 255 255 / 75%); border-radius: 50%; font-size: 12px; font-weight: 900; }
 .button-sos:disabled { color: white; background: #aeb8c7; box-shadow: none; }
+.connection-expand { border-top: 1px solid #edf1f7; padding-top: 10px; }
+.connection-expand summary, .home-guide summary { color: #1261c5; font-size: 13px; font-weight: 750; cursor: pointer; }
+.connection-expand .connection-details { margin-top: 10px; }
+.home-guide summary { color: var(--navy); font-size: 15px; }
+.home-guide[open] summary { margin-bottom: 10px; }
 .location-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; }
 .location-summary > div { min-width: 0; }
 .location-summary > div > strong { display: block; margin-top: 7px; color: var(--navy); font-size: 15px; }
@@ -17,3 +23,9 @@
 .location-summary .text-button { grid-column: 1 / -1; }
 .report-card > strong { display: block; margin-top: 6px; }
 .report-card .secondary-text { margin-top: 6px; }
+.sos-dialog { width: min(390px, calc(100% - 28px)); padding: 22px; border: 1px solid #dce7f5; border-radius: 24px; color: var(--navy); background: #fff; box-shadow: 0 25px 70px rgb(15 35 66 / 25%); }
+.sos-dialog::backdrop { background: rgb(12 29 53 / 56%); backdrop-filter: blur(3px); }
+.sos-dialog h2 { margin: 8px 0; font-size: 24px; letter-spacing: -.6px; }
+.sos-dialog p:not(.eyebrow) { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.sos-dialog-actions { display: grid; grid-template-columns: 1fr 1.25fr; gap: 10px; margin-top: 22px; }
+.sos-dialog-actions .button { width: 100%; min-height: 50px; margin: 0; font-size: 14px; }

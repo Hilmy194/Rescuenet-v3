@@ -18,6 +18,8 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
     assert.ok(ids.includes(id), `missing UI contract element #${id}`);
   }
   for (const tab of ['home','map','status','profile']) assert.match(html, new RegExp(`data-screen="${tab}"`));
+  assert.ok(html.indexOf('class="sos-card"') < html.indexOf('id="connection-panel"'), 'SOS action must appear before network details');
+  for (const id of ['sos-confirm-dialog','sos-stage-local','sos-stage-node','sos-stage-server']) assert.ok(ids.includes(id), `missing SOS flow element #${id}`);
   assert.match(app, /bindBottomNav\(byId\['bottom-nav'\], showScreen\)/);
   assert.match(app, /byId\['welcome-user'\]\s*=\s*\$\('welcome-user'\)/,
     'welcome-user must be mapped from the active PWA document');
@@ -50,7 +52,7 @@ test('PWA screens and four primary navigation tabs are present with unique IDs',
 });
 
 test('service worker caches the scheduler dependency and does not cache API responses', () => {
-  assert.match(worker, /CACHE_NAME = 'rescuenet-pwa-v17'/, 'UI changes must invalidate the previous shell cache');
+  assert.match(worker, /CACHE_NAME = 'rescuenet-pwa-v19'/, 'UI changes must invalidate the previous shell cache');
   assert.match(worker, /location-scheduler\.mjs/);
   for (const asset of ['pages/onboarding.mjs','pages/home.mjs','pages/map.mjs','pages/status.mjs','pages/profile.mjs','components/app-header.mjs','styles/pages/profile.css']) assert.ok(worker.includes(asset), `offline cache missing ${asset}`);
   assert.ok(worker.includes('if (/\\/api(?:\\/|$)/.test(url.pathname))'));

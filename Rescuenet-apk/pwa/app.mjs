@@ -22,10 +22,13 @@ const KEY = {
   onboarded: 'rn.pwa.onboarded.v1',
 };
 const $ = id => document.getElementById(id);
+const shell = document.querySelector('.shell');
 const byId = Object.fromEntries([
   'connection-pill','onboarding-screen','onboarding-step','onboarding-title','onboarding-copy','onboarding-form','wifi-guide','verify-guide','permission-guide','onboarding-consent','onboarding-location-consent','onboarding-next','onboarding-back','onboarding-skip','check-button','home-check-button','connection-title','connection-help','api-state','mesh-state','home-connection-title','home-connection-help','home-api-state','home-mesh-state','status-api','status-mesh','sos-button','sos-button-label','permission-button','permission-status','home-gps-status','home-coordinates','map-coordinate-title','map-coordinate-detail','map-accuracy','map-time','map-age','maps-link','location-button','tracking-button','tracking-status','tracking-badge','location-consent','report-status','report-detail','home-report-status','home-report-detail','retry-button','retry-location-button','new-sos-button','sos-history','name-input','role-input','team-input','profile-name-input','profile-role-input','profile-team-input','save-name-button','profile-summary','profile-edit-label','reset-profile-button','node-url-input','save-node-url-button','tracking-interval-input','toast','bottom-nav','privacy-delete-button','map-update-button','home-map-button','home-status-button','home-wifi-button','location-delivery-status','location-delivery-detail','onboarding-back','onboarding-skip'
 ].map(id => [id, $(id)]));
 byId['welcome-user'] = $('welcome-user');
+for (const id of ['sos-help','sos-confirm-dialog','sos-confirm-copy','sos-confirm-action','sos-history-panel',
+  'sos-stage-local','sos-stage-local-detail','sos-stage-node','sos-stage-node-detail','sos-stage-server','sos-stage-server-detail']) byId[id] = $(id);
 const screens = Object.fromEntries(['splash','onboarding','home','map','status','profile'].map(id => [id, $(`${id}-screen`)]));
 const safeStorage = {
   read(key) { try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch { return null; } },
@@ -119,7 +122,9 @@ function showScreen(name) {
   byId['bottom-nav'].hidden = name === 'onboarding' || name === 'splash';
   renderBottomNav(byId['bottom-nav'], name);
   if (name === 'map') renderMap();
-  window.scrollTo?.({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  const behavior = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  shell?.scrollTo?.({ top: 0, behavior });
+  window.scrollTo?.({ top: 0, behavior });
 }
 function beginOnboarding(step = 0) { state.onboardingStep = step; showScreen('onboarding'); renderOnboarding(); }
 function finishOnboarding() { safeStorage.write(KEY.onboarded, true); showScreen('home'); renderAll(); }
@@ -299,14 +304,13 @@ async function sendSos({retry=false,eventId=null}={}) {
   let locallyPersisted=true;
   if(retry){if(!event||!['QUEUED_LOCAL','FAILED','UNKNOWN'].includes(event.status))return;}
   else {
-    const unresolved=state.events.find(item=>['QUEUED_LOCAL','SENDING','UNKNOWN','FAILED'].includes(item.status));
-    if(unresolved&&!confirm(`SOS ${unresolved.id} belum terkonfirmasi. Buat SOS baru juga? SOS lama tetap tersimpan dan tidak akan dihapus.`))return;
     if(state.events.length>=10){const evict=state.events.findIndex(item=>item.status==='FIELD_ACCEPTED');if(evict>=0)state.events.splice(evict,1);else{toast('Riwayat SOS lokal penuh (maksimum 10) dan semuanya belum terkonfirmasi. Catat ID laporan sebelum membuat SOS baru.');return;}}
     const packet=makeSosPacket(profile(),state.fix,createRequestId());
     event={id:packet.request_id,packet,status:'QUEUED_LOCAL',createdAt:Date.now(),error:null};
     state.events.push(event); locallyPersisted=persistSosEvents();
   }
-  if(!state.nodeReady){event.status='QUEUED_LOCAL';event.error=locallyPersisted?'SOS tersimpan di iPhone dan menunggu dikirim. Sambungkan ke Wi-Fi RescueNet, lalu pilih Coba kirim ulang.':'Penyimpanan lokal gagal; laporan ini hanya ada selama aplikasi tetap terbuka.';persistSosEvents();renderSos();showScreen('status');toast(event.error);return;}
+  showScreen('status');
+  if(!state.nodeReady){event.status='QUEUED_LOCAL';event.error=locallyPersisted?'SOS tersimpan di iPhone dan menunggu dikirim. Sambungkan ke Wi-Fi RescueNet, lalu pilih Coba kirim ulang.':'Penyimpanan lokal gagal; laporan ini hanya ada selama aplikasi tetap terbuka.';persistSosEvents();renderSos();toast(event.error);return;}
   state.sendingSosId=event.id;event.status='SENDING';event.error=null;persistSosEvents();renderSos();renderConnection();
   try {
     const ack=await transmitSos(event.packet,fetch,10_000,nodeUrl());
@@ -325,9 +329,26 @@ function saveNodeAddress() {
   catch(error){toast(error.message);}
 }
 
+function openSosConfirmation() {
+  if (state.sendingSosId || !profile()) return;
+  const unresolved = state.events.some(item => ['QUEUED_LOCAL','SENDING','UNKNOWN','FAILED'].includes(item.status));
+  const action = state.nodeReady ? 'Kirim SOS' : 'Simpan SOS';
+  byId['sos-confirm-action'].textContent = action;
+  byId['sos-confirm-copy'].textContent = `${state.nodeReady
+    ? 'SOS akan dikirim ke Field Node. Penerimaan server belum dapat dipastikan dari aplikasi ini.'
+    : 'SOS akan disimpan di perangkat ini. Sambungkan ke Wi-Fi RescueNet untuk mengirimnya.'} GPS tidak wajib.${unresolved
+    ? ' Masih ada SOS yang belum terkonfirmasi; laporan lama tetap tersimpan.' : ''}`;
+  const dialog = byId['sos-confirm-dialog'];
+  dialog.returnValue = '';
+  if (typeof dialog.showModal === 'function') dialog.showModal();
+  else if (confirm(`${byId['sos-confirm-copy'].textContent} ${action} sekarang?`)) void sendSos();
+}
+byId['sos-confirm-dialog'].addEventListener('close', () => {
+  if (byId['sos-confirm-dialog'].returnValue === 'confirm') void sendSos();
+});
 byId['check-button'].addEventListener('click',()=>void checkConnection());
 bindHomePage({ elements: byId, checkConnection: () => void checkConnection(),
-  sendSos: () => { if(confirm('Kirim SOS sekarang? Jika GPS belum tersedia, SOS tetap dikirim tanpa koordinat.')) void sendSos(); },
+  sendSos: openSosConfirmation,
   showScreen, beginOnboarding });
 async function retrySos(eventId=null){if(!state.nodeReady&&!await checkConnection()){toast('Field Node belum siap. SOS tetap tersimpan lokal; coba lagi setelah terhubung.');return;}await sendSos({retry:true,eventId});}
 bindMapPage({ elements: byId, updateLocation: () => void requestLocation() });

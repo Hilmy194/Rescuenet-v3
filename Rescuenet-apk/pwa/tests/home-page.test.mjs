@@ -6,6 +6,7 @@ import { renderHome } from '../pages/home.mjs';
 
 const homeElements = () => ({
   'welcome-user': { textContent: '' },
+  'sos-help': { textContent: '' },
   'sos-button': { disabled: false },
   'sos-button-label': { textContent: '' },
 });
@@ -23,6 +24,7 @@ test('beranda aman dirender tanpa profil dan SOS tetap nonaktif', () => {
   assert.match(elements['welcome-user'].textContent, /Siapkan identitas/);
   assert.equal(elements['sos-button'].disabled, true);
   assert.equal(elements['sos-button-label'].textContent, 'SIMPAN SOS');
+  assert.match(elements['sos-help'].textContent, /Lengkapi profil/);
 });
 
 test('beranda mengikuti perubahan state SOS dan kesiapan Field Node', () => {
@@ -33,10 +35,12 @@ test('beranda mengikuti perubahan state SOS dan kesiapan Field Node', () => {
   assert.match(elements['welcome-user'].textContent, /Halo, Relawan Uji/);
   assert.equal(elements['sos-button'].disabled, false);
   assert.equal(elements['sos-button-label'].textContent, 'SIMPAN SOS');
+  assert.match(elements['sos-help'].textContent, /Simpan SOS di perangkat/);
 
   state.nodeReady = true;
   renderHome({ elements, profile, state });
   assert.equal(elements['sos-button-label'].textContent, 'KIRIM SOS');
+  assert.match(elements['sos-help'].textContent, /Kirim SOS ke Field Node/);
 
   state.sendingSosId = 'sos-test';
   renderHome({ elements, profile, state });
