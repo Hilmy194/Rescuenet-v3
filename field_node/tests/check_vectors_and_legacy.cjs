@@ -96,7 +96,13 @@ assert(current.includes('meshTransport.enqueueLegacy(report)'), 'portal reports 
 assert(current.includes('Antrean jaringan penuh; coba kembali.'), 'portal reports failure instead of claiming delivery');
 assert(current.includes('SOS belum terkirim. Coba kembali.'), 'portal SOS failure is visible');
 const transport = fs.readFileSync(path.join(root, 'field_node/RescueNetMeshTransport.h'), 'utf8');
-assert(transport.includes("pending->kind == 'S' ? 15000U : 60000U"), 'mobile SOS retries faster than routine locations');
+const mobileQueue = fs.readFileSync(path.join(root, 'field_node/MobileQueue.h'), 'utf8');
+assert(mobileQueue.includes("selected->message.kind == 'S' ? 15000U : 60000U"), 'mobile SOS retries faster than routine locations');
+assert(transport.includes('copyNextForTransmit(millis(), txQueueDepth, 2'), 'mobile sends use a bounded multi-frame window');
+assert(transport.includes('gateway->next_hop') && transport.includes('gateway->hop_count'), 'mesh diagnostics expose relay next-hop and hop count');
+assert(transport.includes('protocol.setMaxHops(rnwire::MAX_MESH_HOPS)'), 'Field explicitly applies the RescueNet hop limit');
+const gatewaySource = fs.readFileSync(path.join(root, 'gateway_node/gateway_node.ino'), 'utf8');
+assert(gatewaySource.includes('protocol.setMaxHops(rnwire::MAX_MESH_HOPS)'), 'Gateway uses the same RescueNet hop limit');
 const legacyQueue = fs.readFileSync(path.join(root, 'field_node/LegacyReportQueue.h'), 'utf8');
 assert(legacyQueue.includes('pending.sos ? 15000U : 60000U'), 'portal SOS retries faster than routine reports');
 console.log(`PASS ${process.argv.includes('--legacy-only') ? '' : `${vectors.length} cross-language vectors and `}${names.length} preserved legacy functions + portal and mesh migration`);

@@ -14,11 +14,9 @@ class RescueNetMeshTransport {
   struct Received { loramesher::AddressType source; uint8_t size; uint8_t data[rnwire::MAX_PACKET]; };
   QueueHandle_t received = nullptr;
   rescue_legacy::ReportQueue legacyQueue;
-  uint8_t inflight[16]{};
-  bool hasInflight = false;
-  uint32_t attemptedAt = 0;
-  uint32_t attempts = 0;
-  uint32_t retryDelayMs = 5000;
+  loramesher::AddressType lastGatewayAddress = 0;
+  loramesher::AddressType previousGatewayAddress = 0;
+  volatile uint32_t droppedReceiveFrames = 0;
   uint32_t lastDiagnostic = 0;
   uint32_t lastStatusUpdate = 0;
   uint32_t lastLegacyDiagnostic = 0;
@@ -40,12 +38,14 @@ public:
     loramesher::RadioConfig radio(loramesher::RadioType::kSx1276, 923.0F, 9, 125.0F, 5, 17, 0xF3, true, 8);
     loramesher::PinConfig pins(18, 23, 26, 33, 5, 19, 27);
     loramesher::LoRaMeshProtocolConfig protocol;
-    protocol.setNodeRole(loramesher::NodeRole::NODE_ONLY); protocol.setMaxPacketSize(115);
+    protocol.setNodeRole(loramesher::NodeRole::NODE_ONLY);
+    protocol.setMaxHops(rnwire::MAX_MESH_HOPS); protocol.setMaxPacketSize(115);
     mesh = loramesher::LoraMesher::Builder().withRadioConfig(radio).withPinConfig(pins).withLoRaMeshProtocol(protocol).Build();
     mesh->SetDataCallback([this](loramesher::AddressType source, const std::vector<uint8_t> &data) {
       if (data.empty() || data.size() > rnwire::MAX_PACKET) return;
       Received item{}; item.source = source; item.size = uint8_t(data.size());
-      memcpy(item.data, data.data(), data.size()); xQueueSend(received, &item, 0);
+      memcpy(item.data, data.data(), data.size());
+      if (xQueueSend(received, &item, 0) != pdTRUE) ++droppedReceiveFrames;
     });
     auto result = mesh->Start();
     if (!result) { Serial.printf("[MESH] start failed: %s\n", result.GetErrorMessage().c_str()); mesh.reset(); return false; }
@@ -63,14 +63,25 @@ public:
     if (!mesh) return;
     auto status = mesh->GetNetworkStatus();
     auto gateway = mesh->GetClosestGateway();
+    if (gateway && gateway->destination != lastGatewayAddress) {
+      previousGatewayAddress = lastGatewayAddress;
+      lastGatewayAddress = gateway->destination;
+    }
     if (!lastStatusUpdate || uint32_t(millis() - lastStatusUpdate) >= 1000) {
       cachedRouteCount = mesh->GetRoutingTable().size();
       lastStatusUpdate = millis();
     }
-    api.meshStatus(true, status.is_synchronized, mesh->GetNodeAddress(), bool(gateway), gateway ? gateway->destination : 0, cachedRouteCount);
+    api.meshStatus(true, status.is_synchronized, mesh->GetNodeAddress(), bool(gateway),
+      gateway ? gateway->destination : 0, gateway ? gateway->next_hop : 0,
+      gateway ? gateway->hop_count : 0, gateway ? gateway->link_quality : 0,
+      cachedRouteCount);
     if (!lastDiagnostic || uint32_t(millis() - lastDiagnostic) > 10000) {
       if (gateway) {
-        Serial.printf("[MESH] gateway found address=%u hops=%u synced=%d\n", unsigned(gateway->destination), unsigned(gateway->hop_count), int(status.is_synchronized));
+        Serial.printf("[MESH ROUTE] gateway=%u next_hop=%u hops=%u quality=%u mode=%s synced=%d routes=%u tx_queue=%u rx_dropped=%u\n",
+          unsigned(gateway->destination), unsigned(gateway->next_hop), unsigned(gateway->hop_count),
+          unsigned(gateway->link_quality), gateway->hop_count > 1 ? "relay" : "direct",
+          int(status.is_synchronized), unsigned(cachedRouteCount), unsigned(mesh->GetTxQueueSize()),
+          unsigned(droppedReceiveFrames));
       } else {
         Serial.printf("[MESH] searching for gateway... synced=%d routes=%u\n", int(status.is_synchronized), unsigned(cachedRouteCount));
       }
@@ -79,24 +90,39 @@ public:
     Received item;
     for (int i = 0; i < 4 && xQueueReceive(received, &item, 0) == pdTRUE; ++i) {
       rnwire::Ack ack;
-      if (!gateway || item.source != gateway->destination || !rnwire::decodeAck(item.data, item.size, ack)) continue;
+      if (!rnwire::decodeAck(item.data, item.size, ack)) continue;
+      // A valid ACK can arrive after a transient route loss or immediately
+      // after GetClosestGateway() switches to a better path. Keep the most
+      // recently discovered Gateway trusted for this boot so that late ACKs
+      // still release durable records instead of filling the queue forever.
+      const bool knownGateway = (gateway && item.source == gateway->destination) ||
+        (lastGatewayAddress && item.source == lastGatewayAddress) ||
+        (previousGatewayAddress && item.source == previousGatewayAddress);
+      if (!knownGateway) {
+        Serial.printf("[ACK DROP] source=%u is not a discovered gateway current=%u last=%u previous=%u\n",
+          unsigned(item.source), unsigned(gateway ? gateway->destination : 0), unsigned(lastGatewayAddress),
+          unsigned(previousGatewayAddress));
+        continue;
+      }
       char key[33]; rnwire::hexKey(ack.key, key);
       Serial.printf("[SERVER ACK] key=%s status=STORED\n", key);
       if (api.completeStored(ack.key)) {
         Serial.printf("[MOBILE QUEUE] completed request=%s\n", key);
-        if (hasInflight && !memcmp(inflight, ack.key, 16)) hasInflight = false;
       } else if (legacyQueue.confirm(ack.key)) {
         Serial.printf("[LEGACY STORED] key=%s pending_normal=%u pending_sos=%u\n", key,
           unsigned(legacyQueue.pendingNormal()), unsigned(legacyQueue.pendingSos()));
       }
     }
     const size_t queuedLegacy = legacyQueue.pendingNormal() + legacyQueue.pendingSos();
+    const bool hasMobilePending = api.hasPending();
     if (!gateway || !status.is_synchronized) {
-      if (queuedLegacy && (!lastLegacyDiagnostic || uint32_t(millis() - lastLegacyDiagnostic) >= 5000)) {
+      if ((queuedLegacy || hasMobilePending) &&
+          (!lastLegacyDiagnostic || uint32_t(millis() - lastLegacyDiagnostic) >= 5000)) {
         const char *reason = !gateway ? "Gateway not discovered" : "mesh not synchronized";
-        Serial.printf("[LEGACY WAIT] normal_pending=%u sos_pending=%u in_flight=%u reason=%s synced=%u routes=%u\n",
+        Serial.printf("[DELIVERY WAIT] mobile_pending=%u normal_pending=%u sos_pending=%u reason=%s synced=%u routes=%u\n",
+          unsigned(api.pendingCount()),
           unsigned(legacyQueue.pendingNormal()), unsigned(legacyQueue.pendingSos()),
-          0U, reason, unsigned(status.is_synchronized), unsigned(cachedRouteCount));
+          reason, unsigned(status.is_synchronized), unsigned(cachedRouteCount));
         lastLegacyDiagnostic = millis();
       }
       return;
@@ -106,7 +132,7 @@ public:
     // up with gateway discovery. Let Send() decide, with the retry timer below
     // bounding attempts instead of blocking the first report for minutes.
     auto readiness = mesh->IsReadyToSend(gateway->destination);
-    if (!readiness && queuedLegacy &&
+    if (!readiness && (queuedLegacy || hasMobilePending) &&
         (!lastLegacyDiagnostic || uint32_t(millis() - lastLegacyDiagnostic) >= 5000)) {
       Serial.printf("[MESH READINESS] gateway=%u reason=%s state=%u tx_slots=%u tx_queue=%u; trying bounded send\n",
         unsigned(gateway->destination), readiness.GetErrorMessage().c_str(),
@@ -114,9 +140,6 @@ public:
         unsigned(mesh->GetTxQueueSize()));
       lastLegacyDiagnostic = millis();
     }
-    rescue_mobile::Message pendingCopy{};
-    const bool hasMobilePending = api.copyNextPending(pendingCopy);
-    const rescue_mobile::Message *pending = hasMobilePending ? &pendingCopy : nullptr;
     const size_t txQueueDepth = mesh->GetTxQueueSize();
     if (txQueueDepth >= 8) {
       if ((queuedLegacy || hasMobilePending) &&
@@ -129,15 +152,10 @@ public:
     }
     // Preserve cross-queue SOS priority: a captive-portal SOS may bypass a
     // waiting mobile LOCATION, while a mobile SOS still goes first.
+    rescue_mobile::Message pendingCopy{};
+    const bool hasMobileReady = api.copyNextForTransmit(millis(), txQueueDepth, 2, pendingCopy);
+    const rescue_mobile::Message *pending = hasMobileReady ? &pendingCopy : nullptr;
     if (pending && (pending->kind == 'S' || legacyQueue.pendingSos() == 0)) {
-      bool changed = !hasInflight || memcmp(inflight, pending->digest, 16);
-      const bool retryDue = !changed && uint32_t(millis() - attemptedAt) >= retryDelayMs;
-      // A successful Send() only means that the library accepted the frame,
-      // not that it reached the radio. Avoid filling its 10-entry TX queue
-      // with duplicate application retries while the original is still queued.
-      if (retryDue && txQueueDepth > 2) return;
-      if (changed || retryDue) {
-        if (changed) { attempts = 0; retryDelayMs = 5000; memcpy(inflight, pending->digest, 16); hasInflight = true; }
         rnwire::Mobile event{};
         event.kind = pending->kind == 'S' ? 2 : 1; event.node = node;
         event.flags = pending->hasGps ? 1 : 0;
@@ -157,27 +175,26 @@ public:
           event.accuracyDm = pending->accuracyKnown ? uint16_t(lround(pending->accuracy * 10.0)) : 0xffff;
         }
         uint8_t packet[rnwire::MAX_PACKET]; size_t n = rnwire::encodeMobile(event, packet);
-        attemptedAt = millis(); ++attempts;
         char key[33]; rnwire::hexKey(event.key, key);
-        Serial.printf("[MOBILE TX] request=%s type=%s attempt=%u\n", key, event.kind == 2 ? "SOS" : "LOCATION", unsigned(attempts));
+        Serial.printf("[MOBILE TX] request=%s type=%s gateway=%u next_hop=%u hops=%u\n",
+          key, event.kind == 2 ? "SOS" : "LOCATION", unsigned(gateway->destination),
+          unsigned(gateway->next_hop), unsigned(gateway->hop_count));
         if (n) {
           auto result = mesh->Send(gateway->destination, std::vector<uint8_t>(packet, packet + n));
+          api.markTransmitAttempt(event.key, bool(result), millis());
           if (result) {
-            // Retry unconfirmed SOS quickly; routine locations keep more
-            // breathing room on the shared LoRa airtime.
-            retryDelayMs = pending->kind == 'S' ? 15000U : 60000U;
-            Serial.println("[MOBILE TX] queued by mesher; awaiting server STORED ACK");
+            Serial.printf("[MOBILE TX] queued by mesher tx_queue=%u; awaiting server STORED ACK\n",
+              unsigned(mesh->GetTxQueueSize()));
           } else {
-            if (attempts > 1 && retryDelayMs < 40000U) retryDelayMs *= 2;
-            if (retryDelayMs > 40000U) retryDelayMs = 40000U;
-            Serial.printf("[MOBILE TX] mesher rejected; retained for retry backoff_ms=%u reason=%s\n",
-              unsigned(retryDelayMs), result.GetErrorMessage().c_str());
+            Serial.printf("[MOBILE TX] mesher rejected; retained for bounded retry reason=%s\n",
+              result.GetErrorMessage().c_str());
           }
+        } else {
+          api.markTransmitAttempt(event.key, false, millis());
+          Serial.println("[MOBILE TX] encode failed; retained for retry");
         }
         return; // One application TX decision per loop iteration.
-      }
     }
-    else hasInflight = false;
     rescue_legacy::Pending nextReport{};
     // A pending mobile LOCATION must not reserve the only legacy in-flight
     // slot and thereby block a captive-portal SOS behind an already accepted

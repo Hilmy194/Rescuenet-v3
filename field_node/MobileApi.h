@@ -21,6 +21,8 @@ class MobileApi {
   bool radioReady = false;
   bool meshStarted = false, meshSynchronized = false, gatewayFound = false;
   uint16_t meshAddress = 0, gatewayAddress = 0;
+  uint16_t gatewayNextHop = 0;
+  uint8_t gatewayHops = 0, gatewayLinkQuality = 0;
   size_t routes = 0;
   uint32_t deliveredSos = 0;
   char lastAck[33]{};
@@ -157,20 +159,28 @@ class MobileApi {
       return httpd_resp_send(request, nullptr, 0);
     }
     if (statusRoute && request->method == HTTP_GET) {
-      StaticJsonDocument<768> doc;
+      StaticJsonDocument<1024> doc;
       lockQueue();
       doc["service"] = "rescuenet-field-node"; doc["api_version"] = 1; doc["node_id"] = node;
       doc["device"] = "field_node"; doc["status"] = radioReady && queue.ready() && meshStarted ? "ready" : "degraded";
       doc["mobile_protocol"] = 1; doc["mobile_tx_enabled"] = true;
       doc["pending_sos"] = queue.pendingSos(); doc["pending_locations"] = queue.pendingLocations();
       doc["sos_capacity"] = rescue_mobile::SOS_CAPACITY; doc["location_capacity"] = rescue_mobile::LOCATION_CAPACITY;
+      doc["sos_free_slots"] = rescue_mobile::SOS_CAPACITY - queue.pendingSos();
+      doc["queue_full"] = queue.pendingSos() >= rescue_mobile::SOS_CAPACITY;
       doc["mesh_enabled"] = true; doc["mesh_started"] = meshStarted;
       doc["mesh_synchronized"] = meshSynchronized; doc["mesh_address"] = meshAddress;
       doc["gateway_found"] = gatewayFound; doc["gateway_address"] = gatewayAddress;
+      doc["gateway_next_hop"] = gatewayNextHop; doc["gateway_hops"] = gatewayHops;
+      doc["gateway_link_quality"] = gatewayLinkQuality;
+      const bool pending = queue.pendingSos() || queue.pendingLocations();
+      doc["delivery_state"] = !pending ? "idle" : !meshStarted ? "mesh_not_started" :
+        !meshSynchronized ? "mesh_not_synchronized" : !gatewayFound ? "gateway_not_found" :
+        "sending_or_awaiting_server_ack";
       doc["route_count"] = routes; doc["delivered_sos_count"] = deliveredSos;
       doc["last_server_ack"] = lastAck[0] ? lastAck : nullptr;
       unlockQueue();
-      char response[768]; serializeJson(doc, response, sizeof(response));
+      char response[1024]; serializeJson(doc, response, sizeof(response));
       return secureSend(request, 200, response, cors) == ESP_OK ? ESP_OK : ESP_FAIL;
     }
     if (statusRoute || request->method != HTTP_POST) return secureSend(request, 405,
@@ -199,7 +209,7 @@ class MobileApi {
     return secureSend(request, code, response, cors) == ESP_OK ? ESP_OK : ESP_FAIL;
   }
   void reply(int code, const JsonDocument &doc) {
-    char response[512];
+    char response[1024];
     if (measureJson(doc) >= sizeof(response)) { error(503, "response_unavailable"); return; }
     serializeJson(doc, response, sizeof(response));
     server.send(code, "application/json", response);
@@ -295,7 +305,7 @@ public:
     return true;
   }
   void status() {
-    StaticJsonDocument<768> doc;
+    StaticJsonDocument<1024> doc;
     lockQueue();
     doc["service"] = "rescuenet-field-node"; doc["api_version"] = 1; doc["node_id"] = node;
     doc["device"] = "field_node"; doc["status"] = radioReady && queue.ready() && meshStarted ? "ready" : "degraded";
@@ -303,9 +313,17 @@ public:
     doc["mobile_tx_enabled"] = true;
     doc["pending_sos"] = queue.pendingSos(); doc["pending_locations"] = queue.pendingLocations();
     doc["sos_capacity"] = rescue_mobile::SOS_CAPACITY; doc["location_capacity"] = rescue_mobile::LOCATION_CAPACITY;
+    doc["sos_free_slots"] = rescue_mobile::SOS_CAPACITY - queue.pendingSos();
+    doc["queue_full"] = queue.pendingSos() >= rescue_mobile::SOS_CAPACITY;
     doc["mesh_enabled"] = true; doc["mesh_started"] = meshStarted;
     doc["mesh_synchronized"] = meshSynchronized; doc["mesh_address"] = meshAddress;
     doc["gateway_found"] = gatewayFound; doc["gateway_address"] = gatewayAddress;
+    doc["gateway_next_hop"] = gatewayNextHop; doc["gateway_hops"] = gatewayHops;
+    doc["gateway_link_quality"] = gatewayLinkQuality;
+    const bool pending = queue.pendingSos() || queue.pendingLocations();
+    doc["delivery_state"] = !pending ? "idle" : !meshStarted ? "mesh_not_started" :
+      !meshSynchronized ? "mesh_not_synchronized" : !gatewayFound ? "gateway_not_found" :
+      "sending_or_awaiting_server_ack";
     doc["route_count"] = routes; doc["delivered_sos_count"] = deliveredSos;
     doc["last_server_ack"] = lastAck[0] ? lastAck : nullptr;
     unlockQueue();
@@ -316,12 +334,20 @@ public:
     if (message) out = *message;
     unlockQueue(); return message != nullptr;
   }
+  bool copyNextForTransmit(uint32_t now, size_t meshQueueDepth, size_t maxInFlight,
+                           rescue_mobile::Message &out) {
+    lockQueue(); const auto *message = queue.nextForTransmit(now, meshQueueDepth, maxInFlight);
+    if (message) out = *message;
+    unlockQueue(); return message != nullptr;
+  }
+  bool markTransmitAttempt(const uint8_t key[16], bool accepted, uint32_t now) {
+    lockQueue(); bool found = queue.attempted(key, accepted, now); unlockQueue(); return found;
+  }
   bool hasPending() const { rescue_mobile::Message ignored{}; return copyNextPending(ignored); }
   size_t pendingCount() const { lockQueue(); size_t count = queue.pendingSos() + queue.pendingLocations(); unlockQueue(); return count; }
   bool completeStored(const uint8_t key[16]) {
     lockQueue();
-    const rescue_mobile::Message *message = queue.nextPending();
-    bool sos = message && message->kind == 'S' && memcmp(message->digest, key, 16) == 0;
+    bool sos = queue.kindForKey(key) == 'S';
     bool completed = queue.completeStored(key);
     if (completed) {
       if (sos) ++deliveredSos;
@@ -332,10 +358,12 @@ public:
     unlockQueue();
     return completed;
   }
-  void meshStatus(bool started, bool synchronized, uint16_t address, bool found, uint16_t gateway, size_t routeCount) {
+  void meshStatus(bool started, bool synchronized, uint16_t address, bool found, uint16_t gateway,
+                  uint16_t nextHop, uint8_t hops, uint8_t linkQuality, size_t routeCount) {
     lockQueue();
     meshStarted = started; meshSynchronized = synchronized; meshAddress = address;
-    gatewayFound = found; gatewayAddress = gateway; routes = routeCount;
+    gatewayFound = found; gatewayAddress = gateway; gatewayNextHop = nextHop;
+    gatewayHops = hops; gatewayLinkQuality = linkQuality; routes = routeCount;
     unlockQueue();
   }
 };

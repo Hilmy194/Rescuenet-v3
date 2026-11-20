@@ -187,6 +187,30 @@ static void queueTests() {
   MobileQueue done(completedStore); check(done.begin(1, 1), "completed journal future seam");
   auto known = done.accept(emergency, 0); check(known.code == 200 && !strcmp(known.state, "lora_tx_completed") && done.pendingSos() == 0, "known completed state not pending");
 }
+static void mobileSchedulerTests() {
+  FakeJournal store; MobileQueue queue(store); check(queue.begin(1, 123), "mobile scheduler starts");
+  auto first = message(sos("WINDOW-1"), true), second = message(sos("WINDOW-2"), true), third = message(sos("WINDOW-3"), true);
+  check(queue.accept(first, 1).code == 202 && queue.accept(second, 2).code == 202 &&
+        queue.accept(third, 3).code == 202, "scheduler fixture queues three durable SOS");
+  const Message *selected = queue.nextForTransmit(0, 0, 2);
+  check(selected && !strcmp(selected->requestId, "WINDOW-1"), "scheduler starts at FIFO head");
+  check(queue.attempted(selected->digest, true, 0), "first frame accepted by mesh");
+  selected = queue.nextForTransmit(1, 1, 2);
+  check(selected && !strcmp(selected->requestId, "WINDOW-2"), "lost first ACK does not block second SOS");
+  check(queue.attempted(selected->digest, true, 1), "second frame accepted by mesh");
+  check(!queue.nextForTransmit(2, 0, 2), "two-frame in-flight window bounds radio backlog");
+  check(queue.completeStored(second.digest) && queue.kindForKey(second.digest) == 0,
+        "out-of-order STORED ACK releases its matching record");
+  selected = queue.nextForTransmit(3, 0, 2);
+  check(selected && !strcmp(selected->requestId, "WINDOW-3"), "ACK opens window for next SOS");
+  check(queue.attempted(selected->digest, false, 3), "mesh rejection retained with backoff");
+  check(!queue.nextForTransmit(4, 0, 2), "rejected frame is not hot-looped");
+  selected = queue.nextForTransmit(5003, 0, 2);
+  check(selected && !strcmp(selected->requestId, "WINDOW-3"), "rejected frame retries after bounded backoff");
+  check(!queue.nextForTransmit(15000, 8, 2), "full mesh queue applies mobile backpressure");
+  selected = queue.nextForTransmit(15000, 2, 2);
+  check(selected && !strcmp(selected->requestId, "WINDOW-1"), "unacked SOS retries after ACK timeout and queue drain");
+}
 static void headerTests() {
   std::string post = "POST /api/location HTTP/1.1\r\nHost: 192.168.4.1\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: 250\r\n\r\n";
   check(!headers(post).error, "normal JSON headers");
@@ -449,7 +473,7 @@ int main(int argc, char **argv) {
       }
       return 0;
     }
-    validationTests(); queueTests(); headerTests(); journalTests(); isolatedStorageTests(); storedAckCompletionTests(); meshWireTests(); legacyQueueTests(); fuzzTests();
+    validationTests(); queueTests(); mobileSchedulerTests(); headerTests(); journalTests(); isolatedStorageTests(); storedAckCompletionTests(); meshWireTests(); legacyQueueTests(); fuzzTests();
     std::cout << "PASS " << checks << " assertions; sizeof(Message)=" << sizeof(Message) << "; sizeof(MobileQueue)=" << sizeof(MobileQueue) << '\n';
     return 0;
   } catch (const std::exception &e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }

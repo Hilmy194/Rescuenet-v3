@@ -153,7 +153,8 @@ void setup() {
   if (!incoming) { Serial.println("[MESH] RX queue unavailable"); return; }
   RadioConfig radio(RadioType::kSx1276, 923.0F, 9, 125.0F, 5, 17, 0xF3, true, 8);
   PinConfig pins(18, 23, 26, 33, 5, 19, 27);
-  LoRaMeshProtocolConfig protocol; protocol.setNodeRole(NodeRole::NETWORK_MANAGER); protocol.setMaxPacketSize(115);
+  LoRaMeshProtocolConfig protocol; protocol.setNodeRole(NodeRole::NETWORK_MANAGER);
+  protocol.setMaxHops(rnwire::MAX_MESH_HOPS); protocol.setMaxPacketSize(115);
   mesh = LoraMesher::Builder().withRadioConfig(radio).withPinConfig(pins)
     .withLoRaMeshProtocol(protocol).withNodeCapabilities(NodeCapabilities::GATEWAY).Build();
   mesh->SetDataCallback(onData);

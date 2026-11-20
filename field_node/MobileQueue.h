@@ -21,7 +21,12 @@ public:
   virtual bool saveCursor(uint8_t nextSlot) = 0;
 };
 class MobileQueue {
-  struct Slot { Message message{}; uint64_t order = 0; bool used = false; };
+  struct Slot {
+    Message message{};
+    uint64_t order = 0;
+    uint32_t lastAttempt = 0, retryAfter = 0;
+    bool used = false, attemptedOnce = false, acceptedByMesh = false;
+  };
   struct History {
     char requestId[41]{};
     uint8_t digest[32]{};
@@ -110,6 +115,62 @@ public:
     for (const auto &slot : locations) if (slot.used && (!next || slot.order < next->order)) next = &slot;
     return next ? &next->message : nullptr;
   }
+  // Select a bounded set of distinct frames instead of retrying only the FIFO
+  // head forever. This prevents one lost ACK from blocking every later SOS,
+  // while acceptedByMesh keeps application retries from filling LoRaMesher's
+  // ten-entry TX queue. Scheduling state is intentionally RAM-only: records
+  // remain durable until a matching server STORED ACK is committed.
+  const Message *nextForTransmit(uint32_t now, size_t meshQueueDepth, size_t maxInFlight) {
+    if (!healthy || !maxInFlight || meshQueueDepth >= 8) return nullptr;
+    if (meshQueueDepth <= 2) {
+      auto releaseDue = [now](Slot &slot) {
+        if (slot.used && slot.acceptedByMesh &&
+            uint32_t(now - slot.lastAttempt) >= slot.retryAfter)
+          slot.acceptedByMesh = false;
+      };
+      for (auto &slot : sos) releaseDue(slot);
+      for (auto &slot : locations) releaseDue(slot);
+    }
+    size_t accepted = 0;
+    for (const auto &slot : sos) if (slot.used && slot.acceptedByMesh) ++accepted;
+    for (const auto &slot : locations) if (slot.used && slot.acceptedByMesh) ++accepted;
+    if (accepted >= maxInFlight) return nullptr;
+    auto eligible = [now](const Slot &slot) {
+      return slot.used && !slot.acceptedByMesh &&
+        (!slot.attemptedOnce || uint32_t(now - slot.lastAttempt) >= slot.retryAfter);
+    };
+    Slot *selected = nullptr;
+    for (auto &slot : sos)
+      if (eligible(slot) && (!selected || slot.order < selected->order)) selected = &slot;
+    if (!selected) for (auto &slot : locations)
+      if (eligible(slot) && (!selected || slot.order < selected->order)) selected = &slot;
+    return selected ? &selected->message : nullptr;
+  }
+  bool attempted(const uint8_t key[16], bool accepted, uint32_t now) {
+    Slot *selected = nullptr;
+    for (auto &slot : sos)
+      if (slot.used && !memcmp(slot.message.digest, key, 16)) { selected = &slot; break; }
+    if (!selected) for (auto &slot : locations)
+      if (slot.used && !memcmp(slot.message.digest, key, 16)) { selected = &slot; break; }
+    if (!selected) return false;
+    selected->lastAttempt = now; selected->attemptedOnce = true;
+    if (accepted) {
+      selected->acceptedByMesh = true;
+      selected->retryAfter = selected->message.kind == 'S' ? 15000U : 60000U;
+    } else {
+      selected->acceptedByMesh = false;
+      selected->retryAfter = selected->retryAfter < 5000U ? 5000U :
+        selected->retryAfter >= 40000U ? 40000U : selected->retryAfter * 2U;
+    }
+    return true;
+  }
+  char kindForKey(const uint8_t key[16]) const {
+    for (const auto &slot : sos)
+      if (slot.used && !memcmp(slot.message.digest, key, 16)) return slot.message.kind;
+    for (const auto &slot : locations)
+      if (slot.used && !memcmp(slot.message.digest, key, 16)) return slot.message.kind;
+    return 0;
+  }
   bool completeStored(const uint8_t key[16]) {
     if (!healthy) return false;
     for (size_t i = 0; i < SOS_CAPACITY; ++i) if (sos[i].used && !memcmp(sos[i].message.digest, key, 16)) {
@@ -169,6 +230,9 @@ public:
     if (coalesced) for (auto &entry : history) {
       if (entry.used && strcmp(entry.requestId, locations[selected].message.requestId) == 0) entry.pending = false;
     }
+    // Coalescing replaces the radio scheduling state too. Otherwise a newer
+    // location could inherit an old frame's in-flight reservation/backoff.
+    locations[selected] = Slot{};
     locations[selected].message = message; locations[selected].used = true; locations[selected].order = ++order;
     History &entry = history[record]; entry = History{};
     strcpy(entry.requestId, message.requestId); memcpy(entry.digest, message.digest, 32);

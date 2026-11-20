@@ -7,6 +7,7 @@
 
 namespace rnwire {
 constexpr size_t MAX_PACKET = 100;
+constexpr uint8_t MAX_MESH_HOPS = 5;
 constexpr size_t MAX_NAME = 48;
 struct Mobile {
   uint8_t kind = 0, flags = 0, node = 0;
